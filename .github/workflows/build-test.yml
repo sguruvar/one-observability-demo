@@ -1,4 +1,4 @@
-name: Build Test
+name: Build and Test
 
 on:
   pull_request:
@@ -10,7 +10,6 @@ on:
       - 'PetAdoptions/petsearch-java/**'
       - 'PetAdoptions/petsite/**'
       - 'PetAdoptions/petstatusupdater/**'
-      - 'PetAdoptions/trafficgenerator/**'
   push:
     branches: [ main, staging ]
     paths:
@@ -20,7 +19,6 @@ on:
       - 'PetAdoptions/petsearch-java/**'
       - 'PetAdoptions/petsite/**'
       - 'PetAdoptions/petstatusupdater/**'
-      - 'PetAdoptions/trafficgenerator/**'
 
 jobs:
   docker-builds:
@@ -37,8 +35,6 @@ jobs:
             path: PetAdoptions/petsearch-java
           - name: petsite
             path: PetAdoptions/petsite/petsite
-          - name: trafficgenerator
-            path: PetAdoptions/trafficgenerator/trafficgenerator
 
     steps:
       - uses: actions/checkout@v3
@@ -96,8 +92,6 @@ jobs:
         project:
           - name: petsite
             path: PetAdoptions/petsite/petsite.sln
-          - name: trafficgenerator
-            path: PetAdoptions/trafficgenerator/trafficgenerator.sln
 
     steps:
       - uses: actions/checkout@v3
@@ -108,7 +102,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore ${{ matrix.project.path }}
+        run: dotnet restore
+        working-directory: ${{ matrix.project.path }}
 
       - name: Build
-        run: dotnet build ${{ matrix.project.path }} --no-restore
+        run: dotnet build --no-restore
+        working-directory: ${{ matrix.project.path }}
+
+      - name: Test
+        run: dotnet test --no-build --verbosity normal
+        working-directory: ${{ matrix.project.path }}

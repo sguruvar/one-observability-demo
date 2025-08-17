@@ -1,0 +1,416 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudWatch Synthetic Canaries for Pet Adoptions Application'
+
+Parameters:
+  PetSiteUrl:
+    Type: String
+    Description: 'Pet site URL (without http/https prefix)'
+    Default: 'petsite-1088770206.us-east-1.elb.amazonaws.com'
+  
+  SearchApiUrl:
+    Type: String
+    Description: 'Search API URL (without http/https prefix)'
+    Default: 'petsearch-live.us-east-1.elasticbeanstalk.com/api/search'
+  
+  CanarySchedule:
+    Type: String
+    Description: 'Canary execution schedule (rate expression)'
+    Default: 'rate(5 minutes)'
+  
+  NotificationEmail:
+    Type: String
+    Description: 'Email address for canary failure notifications'
+    Default: ''
+
+Conditions:
+  CreateNotifications: !Not [!Equals [!Ref NotificationEmail, '']]
+
+Resources:
+  # S3 Bucket for Canary Artifacts
+  CanaryArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-canary-artifacts-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # IAM Role for Canaries
+  CanaryExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-canary-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/CloudWatchSyntheticsExecutionRolePolicy
+      Policies:
+        - PolicyName: CanaryS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub '${CanaryArtifactsBucket}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Ref CanaryArtifactsBucket
+
+  # SNS Topic for Notifications
+  CanaryAlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: CreateNotifications
+    Properties:
+      TopicName: !Sub '${AWS::StackName}-canary-alarms'
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+
+  # Pet Search Canary
+  PetSearchCanary:
+    Type: AWS::Synthetics::Canary
+    Properties:
+      Name: !Sub '${AWS::StackName}-pet-search-canary'
+      ExecutionRoleArn: !GetAtt CanaryExecutionRole.Arn
+      Code:
+        Handler: pet-search-canary.handler
+        Script: |
+          const synthetics = require('Synthetics');
+          const log = require('SyntheticsLogger');
+
+          const petSearchCanary = async function () {
+              const config = {
+                  includeRequestHeaders: true,
+                  includeResponseHeaders: true,
+                  restrictedHeaders: [],
+                  restrictedUrlParameters: []
+              };
+
+              const apiCanaryBlueprint = synthetics.getConfiguration();
+              apiCanaryBlueprint.setConfig(config);
+
+              const searchApiUrl = synthetics.getConfiguration().getEnvironmentVariable('SEARCH_API_URL');
+              const baseUrl = searchApiUrl.startsWith('http') ? searchApiUrl : `https://${searchApiUrl}`;
+              
+              log.info('Starting Pet Search API canary');
+
+              try {
+                  const loadPetsRequest = {
+                      hostname: baseUrl.replace(/https?:\/\//, '').split('/')[0],
+                      method: 'GET',
+                      path: '/api/search',
+                      port: 443,
+                      protocol: 'https:'
+                  };
+
+                  const petsResponse = await synthetics.executeHttpStep('loadPets', loadPetsRequest);
+                  
+                  if (petsResponse.statusCode !== 200) {
+                      throw new Error(`Pet data load failed with status: ${petsResponse.statusCode}`);
+                  }
+
+                  const petsData = JSON.parse(petsResponse.responseBody);
+                  log.info(`Successfully loaded ${petsData.length} pets`);
+
+                  if (!Array.isArray(petsData) || petsData.length === 0) {
+                      throw new Error('Invalid pets data structure or empty response');
+                  }
+
+                  synthetics.addExecutionTag('pets-count', petsData.length.toString());
+                  log.info('Pet Search API canary completed successfully');
+                  
+              } catch (error) {
+                  log.error('Pet Search API canary failed:', error.message);
+                  throw error;
+              }
+          };
+
+          exports.handler = async () => {
+              return await synthetics.executeStep('petSearchCanary', petSearchCanary);
+          };
+      ArtifactS3Location: !Sub 's3://${CanaryArtifactsBucket}/pet-search-canary'
+      RuntimeVersion: syn-nodejs-puppeteer-6.2
+      Schedule:
+        Expression: !Ref CanarySchedule
+        DurationInSeconds: 0
+      RunConfig:
+        TimeoutInSeconds: 60
+        MemoryInMB: 960
+        ActiveTracing: true
+        EnvironmentVariables:
+          SEARCH_API_URL: !Ref SearchApiUrl
+      FailureRetentionPeriod: 30
+      SuccessRetentionPeriod: 30
+      StartCanaryAfterCreation: true
+
+  # API Health Canary
+  ApiHealthCanary:
+    Type: AWS::Synthetics::Canary
+    Properties:
+      Name: !Sub '${AWS::StackName}-api-health-canary'
+      ExecutionRoleArn: !GetAtt CanaryExecutionRole.Arn
+      Code:
+        Handler: api-health-canary.handler
+        Script: |
+          const synthetics = require('Synthetics');
+          const log = require('SyntheticsLogger');
+
+          const apiHealthCanary = async function () {
+              const config = {
+                  includeRequestHeaders: true,
+                  includeResponseHeaders: true,
+                  restrictedHeaders: [],
+                  restrictedUrlParameters: []
+              };
+
+              const apiCanaryBlueprint = synthetics.getConfiguration();
+              apiCanaryBlueprint.setConfig(config);
+
+              const petSiteUrl = synthetics.getConfiguration().getEnvironmentVariable('PET_SITE_URL');
+              const baseSiteUrl = petSiteUrl.startsWith('http') ? petSiteUrl : `https://${petSiteUrl}`;
+              
+              log.info('Starting API Health Check canary');
+
+              const healthChecks = [];
+
+              try {
+                  const rootRequest = {
+                      hostname: baseSiteUrl.replace(/https?:\/\//, '').split('/')[0],
+                      method: 'GET',
+                      path: '/',
+                      port: 443,
+                      protocol: 'https:'
+                  };
+
+                  const rootResponse = await synthetics.executeHttpStep('petSiteRoot', rootRequest);
+                  healthChecks.push({
+                      endpoint: 'Pet Site Root',
+                      status: rootResponse.statusCode,
+                      healthy: rootResponse.statusCode >= 200 && rootResponse.statusCode < 400
+                  });
+
+                  const healthyEndpoints = healthChecks.filter(check => check.healthy).length;
+                  const totalEndpoints = healthChecks.length;
+                  const healthPercentage = (healthyEndpoints / totalEndpoints) * 100;
+
+                  synthetics.addExecutionTag('health-percentage', healthPercentage.toFixed(1));
+
+                  if (healthPercentage < 80) {
+                      throw new Error(`Health check failed: Only ${healthPercentage.toFixed(1)}% of endpoints are healthy`);
+                  }
+
+                  log.info('API Health Check canary completed successfully');
+                  
+              } catch (error) {
+                  log.error('API Health Check canary failed:', error.message);
+                  throw error;
+              }
+          };
+
+          exports.handler = async () => {
+              return await synthetics.executeStep('apiHealthCanary', apiHealthCanary);
+          };
+      ArtifactS3Location: !Sub 's3://${CanaryArtifactsBucket}/api-health-canary'
+      RuntimeVersion: syn-nodejs-puppeteer-6.2
+      Schedule:
+        Expression: !Ref CanarySchedule
+        DurationInSeconds: 0
+      RunConfig:
+        TimeoutInSeconds: 60
+        MemoryInMB: 960
+        ActiveTracing: true
+        EnvironmentVariables:
+          PET_SITE_URL: !Ref PetSiteUrl
+      FailureRetentionPeriod: 30
+      SuccessRetentionPeriod: 30
+      StartCanaryAfterCreation: true
+
+  # Pet Adoption Workflow Canary
+  PetAdoptionWorkflowCanary:
+    Type: AWS::Synthetics::Canary
+    Properties:
+      Name: !Sub '${AWS::StackName}-pet-adoption-workflow-canary'
+      ExecutionRoleArn: !GetAtt CanaryExecutionRole.Arn
+      Code:
+        Handler: pet-adoption-workflow-canary.handler
+        Script: |
+          const synthetics = require('Synthetics');
+          const log = require('SyntheticsLogger');
+
+          const petAdoptionWorkflowCanary = async function () {
+              const config = {
+                  includeRequestHeaders: true,
+                  includeResponseHeaders: true,
+                  restrictedHeaders: [],
+                  restrictedUrlParameters: []
+              };
+
+              const apiCanaryBlueprint = synthetics.getConfiguration();
+              apiCanaryBlueprint.setConfig(config);
+
+              const petSiteUrl = synthetics.getConfiguration().getEnvironmentVariable('PET_SITE_URL');
+              const searchApiUrl = synthetics.getConfiguration().getEnvironmentVariable('SEARCH_API_URL');
+              
+              const baseSiteUrl = petSiteUrl.startsWith('http') ? petSiteUrl : `https://${petSiteUrl}`;
+              const baseSearchUrl = searchApiUrl.startsWith('http') ? searchApiUrl : `https://${searchApiUrl}`;
+              
+              log.info('Starting Pet Adoption Workflow canary');
+
+              try {
+                  // Housekeeping
+                  const housekeepingRequest = {
+                      hostname: baseSiteUrl.replace(/https?:\/\//, '').split('/')[0],
+                      method: 'GET',
+                      path: '/housekeeping/',
+                      port: 443,
+                      protocol: 'https:'
+                  };
+
+                  await synthetics.executeHttpStep('housekeeping', housekeepingRequest);
+
+                  // Load Pet Data
+                  const loadPetsRequest = {
+                      hostname: baseSearchUrl.replace(/https?:\/\//, '').split('/')[0],
+                      method: 'GET',
+                      path: '/api/search',
+                      port: 443,
+                      protocol: 'https:'
+                  };
+
+                  const petsResponse = await synthetics.executeHttpStep('loadPetData', loadPetsRequest);
+                  const allPets = JSON.parse(petsResponse.responseBody);
+
+                  if (allPets.length === 0) {
+                      throw new Error('No pets available for adoption workflow test');
+                  }
+
+                  const selectedPet = allPets[Math.floor(Math.random() * allPets.length)];
+                  
+                  synthetics.addExecutionTag('pet-type', selectedPet.pettype);
+                  synthetics.addExecutionTag('workflow-type', 'full-adoption');
+
+                  log.info('Pet Adoption Workflow canary completed successfully');
+                  
+              } catch (error) {
+                  log.error('Pet Adoption Workflow canary failed:', error.message);
+                  throw error;
+              }
+          };
+
+          exports.handler = async () => {
+              return await synthetics.executeStep('petAdoptionWorkflowCanary', petAdoptionWorkflowCanary);
+          };
+      ArtifactS3Location: !Sub 's3://${CanaryArtifactsBucket}/pet-adoption-workflow-canary'
+      RuntimeVersion: syn-nodejs-puppeteer-6.2
+      Schedule:
+        Expression: 'rate(10 minutes)'  # Less frequent for full workflow
+        DurationInSeconds: 0
+      RunConfig:
+        TimeoutInSeconds: 120
+        MemoryInMB: 960
+        ActiveTracing: true
+        EnvironmentVariables:
+          PET_SITE_URL: !Ref PetSiteUrl
+          SEARCH_API_URL: !Ref SearchApiUrl
+      FailureRetentionPeriod: 30
+      SuccessRetentionPeriod: 30
+      StartCanaryAfterCreation: true
+
+  # CloudWatch Alarms
+  PetSearchCanaryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: CreateNotifications
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-pet-search-canary-failures'
+      AlarmDescription: 'Pet Search Canary failure alarm'
+      MetricName: Failed
+      Namespace: CloudWatchSynthetics
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: CanaryName
+          Value: !Ref PetSearchCanary
+      AlarmActions:
+        - !Ref CanaryAlarmTopic
+
+  ApiHealthCanaryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: CreateNotifications
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-api-health-canary-failures'
+      AlarmDescription: 'API Health Canary failure alarm'
+      MetricName: Failed
+      Namespace: CloudWatchSynthetics
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: CanaryName
+          Value: !Ref ApiHealthCanary
+      AlarmActions:
+        - !Ref CanaryAlarmTopic
+
+  PetAdoptionWorkflowCanaryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: CreateNotifications
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-pet-adoption-workflow-canary-failures'
+      AlarmDescription: 'Pet Adoption Workflow Canary failure alarm'
+      MetricName: Failed
+      Namespace: CloudWatchSynthetics
+      Statistic: Sum
+      Period: 600
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: CanaryName
+          Value: !Ref PetAdoptionWorkflowCanary
+      AlarmActions:
+        - !Ref CanaryAlarmTopic
+
+Outputs:
+  CanaryArtifactsBucket:
+    Description: 'S3 bucket for canary artifacts'
+    Value: !Ref CanaryArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-canary-artifacts-bucket'
+
+  PetSearchCanaryName:
+    Description: 'Pet Search Canary name'
+    Value: !Ref PetSearchCanary
+    Export:
+      Name: !Sub '${AWS::StackName}-pet-search-canary'
+
+  ApiHealthCanaryName:
+    Description: 'API Health Canary name'
+    Value: !Ref ApiHealthCanary
+    Export:
+      Name: !Sub '${AWS::StackName}-api-health-canary'
+
+  PetAdoptionWorkflowCanaryName:
+    Description: 'Pet Adoption Workflow Canary name'
+    Value: !Ref PetAdoptionWorkflowCanary
+    Export:
+      Name: !Sub '${AWS::StackName}-pet-adoption-workflow-canary'

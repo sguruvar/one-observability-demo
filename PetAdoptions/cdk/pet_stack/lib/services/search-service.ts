@@ -1,6 +1,6 @@
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as appsignals from '@aws-cdk/aws-applicationsignals-alpha';
+// import * as appsignals from '@aws-cdk/aws-applicationsignals-alpha';
 import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
 import { EcsService, EcsServiceProps } from './ecs-service'
 import { Construct } from 'constructs'
@@ -14,6 +14,8 @@ export class SearchService extends EcsService {
     this.taskDefinition.taskRole?.addManagedPolicy(iam.ManagedPolicy.fromManagedPolicyArn(this, 'AmazonS3ReadOnlyAccess', 'arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess'));
 
     // Add Application Signals integration with CloudWatch agent
+    // Commented out due to import issues - can be re-enabled when package is available
+    /*
     new appsignals.ApplicationSignalsIntegration(this, 'ApplicationSignalsIntegration', {
       taskDefinition: this.taskDefinition,
       instrumentation: {
@@ -27,6 +29,7 @@ export class SearchService extends EcsService {
         memoryLimitMiB: 512,
       }
     });
+    */
   }
 
   containerImageFromRepository(repositoryURI: string) : ecs.ContainerImage {

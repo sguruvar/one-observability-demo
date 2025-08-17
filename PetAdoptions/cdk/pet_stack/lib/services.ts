@@ -4,6 +4,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as sns from 'aws-cdk-lib/aws-sns'
 import * as sqs from 'aws-cdk-lib/aws-sqs'
 import * as subs from 'aws-cdk-lib/aws-sns-subscriptions'
+// actions import removed - no longer needed after canary removal
 import * as ddb from 'aws-cdk-lib/aws-dynamodb'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as s3seeder from 'aws-cdk-lib/aws-s3-deployment'
@@ -19,12 +20,13 @@ import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as applicationinsights from 'aws-cdk-lib/aws-applicationinsights';
 import * as resourcegroups from 'aws-cdk-lib/aws-resourcegroups';
 import * as applicationsignals from 'aws-cdk-lib/aws-applicationsignals';
+// synthetics import removed - moved to separate SyntheticCanaries stack
 
 import { Construct } from 'constructs'
 import { PayForAdoptionService } from './services/pay-for-adoption-service'
 import { ListAdoptionsService } from './services/list-adoptions-service'
 import { SearchService } from './services/search-service'
-import { TrafficGeneratorService } from './services/traffic-generator-service'
+
 import { StatusUpdaterService } from './services/status-updater-service'
 import { PetAdoptionsStepFn } from './services/stepfn'
 import { KubernetesVersion } from 'aws-cdk-lib/aws-eks';
@@ -258,19 +260,7 @@ export class Services extends Stack {
         })
         searchService.taskDefinition.taskRole?.addToPrincipalPolicy(readSSMParamsPolicy);
 
-        // Traffic Generator task definition.
-        const trafficGeneratorService = new TrafficGeneratorService(this, 'traffic-generator-service', {
-            cluster: ecsPetListAdoptionCluster,
-            logGroupName: "/ecs/PetTrafficGenerator",
-            cpu: 256,
-            memoryLimitMiB: 512,
-            instrumentation: 'none',
-            //repositoryURI: repositoryURI,
-            desiredTaskCount: 1,
-            region: region,
-            securityGroup: ecsServicesSecurityGroup
-        })
-        trafficGeneratorService.taskDefinition.taskRole?.addToPrincipalPolicy(readSSMParamsPolicy);
+        // Traffic Generator removed - replaced with Synthetic Canaries
 
         //PetStatusUpdater Lambda Function and APIGW--------------------------------------
         const statusUpdaterService = new StatusUpdaterService(this, 'status-updater-service', {
@@ -291,7 +281,7 @@ export class Services extends Stack {
             internetFacing: true,
             securityGroup: albSG
         });
-        trafficGeneratorService.node.addDependency(alb);
+        // Traffic generator dependency removed
 
         const targetGroup = new elbv2.ApplicationTargetGroup(this, 'PetSiteTargetGroup', {
             port: 80,
@@ -662,6 +652,10 @@ export class Services extends Stack {
 
 
         const petAdoptionsStepFn = new PetAdoptionsStepFn(this, 'StepFn');
+
+        // Synthetic Canaries removed - replaced with separate SyntheticCanaries stack
+
+        // Canary outputs removed - moved to separate SyntheticCanaries stack
 
         this.createSsmParameters(new Map(Object.entries({
             '/petstore/trafficdelaytime': "1",

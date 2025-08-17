@@ -1,0 +1,26 @@
+{
+  "name": "pet-adoptions-synthetic-canaries",
+  "version": "1.0.0",
+  "description": "AWS CloudWatch Synthetic Canaries for Pet Adoptions application monitoring",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "package": "zip -r canaries.zip . -x '*.zip' 'node_modules/*' '.git/*'"
+  },
+  "keywords": [
+    "aws",
+    "cloudwatch",
+    "synthetic",
+    "canary",
+    "monitoring",
+    "testing"
+  ],
+  "author": "Pet Adoptions Team",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
+

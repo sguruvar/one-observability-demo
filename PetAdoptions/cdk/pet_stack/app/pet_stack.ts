@@ -2,6 +2,7 @@
 import 'source-map-support/register';
 import { Services } from '../lib/services';
 import { Applications } from '../lib/applications';
+import { SyntheticCanaries } from '../lib/synthetic-canaries';
 //import { EKSPetsite } from '../lib/ekspetsite'
 import { App, Tags, Aspects } from 'aws-cdk-lib';
 //import { AwsSolutionsChecks } from 'cdk-nag';
@@ -22,6 +23,13 @@ const applications = new Applications(app, "Applications", {
     region: process.env.CDK_DEFAULT_REGION 
 }});
 
+const syntheticCanaries = new SyntheticCanaries(app, "SyntheticCanaries", {
+  env: { 
+    account: process.env.CDK_DEFAULT_ACCOUNT, 
+    region: process.env.CDK_DEFAULT_REGION 
+}});
+
 Tags.of(app).add("Workshop","true")
 //Aspects.of(stack).add(new AwsSolutionsChecks({verbose: true}));
 //Aspects.of(applications).add(new AwsSolutionsChecks({verbose: true}));
+//Aspects.of(syntheticCanaries).add(new AwsSolutionsChecks({verbose: true}));

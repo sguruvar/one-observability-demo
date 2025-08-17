@@ -4,6 +4,9 @@
     "vpc_cidr": "11.0.0.0/16",
     "snstopic_email": "someone@example.com",
     "rdsusername":"petadmin",
-    "petsite_on_eks":"true"
+    "petsite_on_eks":"true",
+    "canary_schedule": "rate(5 minutes)",
+    "notification_email": "",
+    "traffic_delay_time": "1"
   }
 }

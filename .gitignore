@@ -9,14 +9,12 @@ PetAdoptions/payforadoption-go/petadoptions
 # editor settings
 .vscode/settings.json
 PetAdoptions/petsite/petsite/appsettings.Development.json
-PetAdoptions/trafficgenerator/.idea/.idea.trafficgenerator/.idea/indexLayout.xml
-PetAdoptions/trafficgenerator/.idea/.idea.trafficgenerator/.idea/modules.xml
+
 
 
 # Merging gitignore files
 
 ./petsite/.idea
-./trafficgenerator/.idea
 ./petstatusupdater/function.zip
 cscdk
 
