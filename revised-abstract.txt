@@ -1,0 +1,5 @@
+Title: Monitoring AI Agents and Traditional Applications Together with Amazon CloudWatch
+
+Abstract: Modern applications now combine AI agents with traditional software components, creating hybrid systems that require monitoring both types of workloads. This session shows how to use Amazon CloudWatch to monitor your entire application stack - from AI agent decision-making and behavior patterns to traditional infrastructure metrics like CPU and memory usage. 
+
+You'll learn practical techniques for tracking AI agent performance alongside your existing application monitoring, correlating issues between AI components and traditional services, and using CloudWatch's search capabilities to quickly identify problems across your hybrid environment. We'll demonstrate how customers use Amazon CloudWatch Application Signals to maintain reliability and performance when AI agents interact with conventional workloads, making troubleshooting faster and more effective.

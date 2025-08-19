@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import 'source-map-support/register';
 import { Services } from '../lib/services';
 import { Applications } from '../lib/applications';
 import { SyntheticCanaries } from '../lib/synthetic-canaries';
@@ -14,19 +13,19 @@ const app = new App();
 const stack = new Services(app, stackName, { 
   env: { 
     account: process.env.CDK_DEFAULT_ACCOUNT, 
-    region: process.env.CDK_DEFAULT_REGION 
+    region: 'ap-southeast-1'  // Explicitly set to ap-southeast-1 for testing
 }});
 
 const applications = new Applications(app, "Applications", {
   env: { 
     account: process.env.CDK_DEFAULT_ACCOUNT, 
-    region: process.env.CDK_DEFAULT_REGION 
+    region: 'ap-southeast-1'  // Explicitly set to ap-southeast-1 for testing
 }});
 
 const syntheticCanaries = new SyntheticCanaries(app, "SyntheticCanaries", {
   env: { 
     account: process.env.CDK_DEFAULT_ACCOUNT, 
-    region: process.env.CDK_DEFAULT_REGION 
+    region: 'ap-southeast-1'  // Explicitly set to ap-southeast-1 for testing
 }});
 
 Tags.of(app).add("Workshop","true")
