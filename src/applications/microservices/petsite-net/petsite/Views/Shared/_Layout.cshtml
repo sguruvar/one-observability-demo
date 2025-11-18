@@ -9,18 +9,7 @@
 <html lang="en">
 
 <head>
-    @try
-    {
-        var rumScript = ParameterNames.GetParameterValue(ParameterNames.RUM_SCRIPT_PARAMETER, Configuration);
-        if (!string.IsNullOrEmpty(rumScript))
-        {
-            @Html.Raw(rumScript)
-        }
-    }
-    catch
-    {
-        <!-- RUM script not available -->
-    }
+    @await Component.InvokeAsync("RumScript")
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - Observability PetAdoptions</title>
